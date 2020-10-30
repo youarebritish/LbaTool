@@ -8,19 +8,21 @@ using System.Xml;
 
 namespace LbaTool
 {
-    class Program
+    internal static class Program
     {
-        private const string DefaultDictionaryFileName = "lba dictionary.txt";
+        private const string DefaultNameDictionaryFileName = "lba name dictionary.txt";
+        private const string DefaultDataSetDictionaryFileName = "lba dataset dictionary.txt";
         private const string DefaultHashMatchOutputFileName = "lba hash matches.txt";
 
-        static void Main(string[] args)
+        private static void Main(string[] args)
         {
             var hashManager = new HashManager();
 
-            // Read hash dictionary
-            if (File.Exists(DefaultDictionaryFileName))
+            // Read hash dictionaries
+            if (File.Exists(DefaultNameDictionaryFileName))
             {
-                hashManager.HashLookupTable = MakeHashLookupTableFromFile(DefaultDictionaryFileName);
+                hashManager.StrCode32LookupTable = MakeHashLookupTableFromFile(DefaultNameDictionaryFileName, FoxHash.Type.StrCode32);
+                hashManager.PathCode32LookupTable = MakeHashLookupTableFromFile(DefaultDataSetDictionaryFileName, FoxHash.Type.PathCode32);
             }
 
             foreach (var lbaPath in args)
@@ -52,7 +54,7 @@ namespace LbaTool
 
         public static void WriteToBinary(LbaFile lba, string path)
         {
-            using (BinaryWriter writer = new BinaryWriter(new FileStream(path, FileMode.OpenOrCreate)))
+            using (BinaryWriter writer = new BinaryWriter(new FileStream(path, FileMode.Create)))
             {
                 lba.Write(writer);
             }
@@ -99,7 +101,7 @@ namespace LbaTool
         /// <summary>
         /// Opens a file containing one string per line, hashes each string, and adds each pair to a lookup table.
         /// </summary>
-        static Dictionary<uint, string> MakeHashLookupTableFromFile(string path)
+        private static Dictionary<uint, string> MakeHashLookupTableFromFile(string path, FoxHash.Type hashType)
         {
             ConcurrentDictionary<uint, string> table = new ConcurrentDictionary<uint, string>();
 
@@ -116,20 +118,27 @@ namespace LbaTool
             }
 
             // Hash entries
-            Parallel.ForEach(stringLiterals, delegate (string entry)
+            Parallel.ForEach(stringLiterals, (string entry) =>
             {
-                uint hash = HashManager.HashString(entry);
-                table.TryAdd(hash, entry);
+                if (hashType == FoxHash.Type.StrCode32)
+                {
+                    uint hash = HashManager.StrCode32(entry);
+                    table.TryAdd(hash, entry);
+                }
+                else
+                {
+                    uint hash = HashManager.PathCode32(entry);
+                    table.TryAdd(hash, entry);
+                }
             });
 
-            // Return lookup table
             return new Dictionary<uint, string>(table);
         }
 
         /// <summary>
         /// Outputs all hash matched strings to a file.
         /// </summary>
-        static void WriteHashMatchesToFile(string path, HashManager hashManager)
+        private static void WriteHashMatchesToFile(string path, HashManager hashManager)
         {
             using (StreamWriter file = new StreamWriter(path))
             {
